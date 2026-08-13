@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <Version Condition="'$(Version)' == ''">0.1.0</Version>
+    <LangVersion>14.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <BaseOutputPath>$(TEMP)\CodexQuotaResetRadar\$(MSBuildProjectName)\bin\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(TEMP)\CodexQuotaResetRadar\$(MSBuildProjectName)\obj\</BaseIntermediateOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(MSBuildProjectDirectory)\obj\**;$(MSBuildProjectDirectory)\bin\**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

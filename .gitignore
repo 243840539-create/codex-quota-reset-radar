@@ -1,0 +1,14 @@
+.vs/
+.vscode/
+.idea/
+bin/
+obj/
+artifacts/
+TestResults/
+*.user
+*.suo
+*.nupkg
+*.snupkg
+*.log
+.DS_Store
+Thumbs.db

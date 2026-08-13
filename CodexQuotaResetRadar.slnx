@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WindexBar.Core/WindexBar.Core.csproj" />
+    <Project Path="src/QuotaResetRadar.Windows/QuotaResetRadar.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WindexBar.Core.Tests/WindexBar.Core.Tests.csproj" />
+  </Folder>
+</Solution>
