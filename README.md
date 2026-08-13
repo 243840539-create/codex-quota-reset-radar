@@ -21,7 +21,7 @@
 
 ## 下载与运行
 
-在仓库的 **Releases** 页面下载 `Codex全员重置雷达.zip`，解压后运行：
+在仓库的 **Releases** 页面下载 `Codex.zip`，解压后运行：
 
 ```text
 Codex全员重置雷达.exe
