@@ -191,6 +191,57 @@ public sealed class QuotaForecastTests
         }
     }
 
+    [Fact]
+    public void ImportsKnownXAuthorAndChineseDateFromClipboard()
+    {
+        var imported = QuotaSignalImportParser.Parse(
+            "@thsottiaux 预计 2026年8月16日 20:30 全员重置 https://x.com/thsottiaux/status/123",
+            Now);
+
+        Assert.Equal("@thsottiaux", imported.Author);
+        Assert.Equal("X 线索", imported.SourceKind);
+        Assert.Equal(95, imported.Reliability);
+        Assert.Equal(new DateTimeOffset(2026, 8, 16, 20, 30, 0, TimeSpan.Zero), imported.TargetAt);
+    }
+
+    [Fact]
+    public void ImportsOfficialStatusInformationAtHighReliability()
+    {
+        var imported = QuotaSignalImportParser.Parse(
+            "Codex limits will reset tomorrow 18:00 https://status.openai.com/incidents/example",
+            Now);
+
+        Assert.Equal("@OpenAI", imported.Author);
+        Assert.Equal("OpenAI 状态", imported.SourceKind);
+        Assert.Equal(95, imported.Reliability);
+        Assert.Equal(new DateTimeOffset(2026, 8, 14, 18, 0, 0, TimeSpan.Zero), imported.TargetAt);
+    }
+
+    [Fact]
+    public void KeepsCommunityInformationWithoutInventingADate()
+    {
+        var imported = QuotaSignalImportParser.Parse(
+            "Community discussion https://www.reddit.com/r/codex/comments/example",
+            Now);
+
+        Assert.Equal("Reddit 社区", imported.SourceKind);
+        Assert.Equal(45, imported.Reliability);
+        Assert.Null(imported.TargetAt);
+    }
+
+    [Fact]
+    public void SimilarLookingDomainsDoNotReceiveOfficialTrust()
+    {
+        var imported = QuotaSignalImportParser.Parse(
+            "Reset tomorrow https://notopenai.com/reset",
+            Now,
+            fallbackReliability: 50);
+
+        Assert.Equal("网页/新闻", imported.SourceKind);
+        Assert.Equal(50, imported.Reliability);
+        Assert.NotEqual("@OpenAI", imported.Author);
+    }
+
     private static QuotaCommunitySignal Signal(
         string author,
         DateTimeOffset target,

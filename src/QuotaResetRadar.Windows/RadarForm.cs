@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using WindexBar.Core.Forecasting;
 using WindexBar.Core.Refresh;
 
@@ -7,6 +8,34 @@ namespace QuotaResetRadar.Windows;
 public sealed class RadarForm : Form
 {
     private const string XQuery = "(from:thsottiaux OR from:sama OR from:OpenAIDevs OR from:OpenAI) Codex (reset OR \"rate limit\" OR \"usage limit\" OR \"all plans\")";
+
+    private static readonly SearchPreset[] SearchPresets =
+    [
+        new(
+            "内部人士与官方 X",
+            $"https://x.com/search?q={Uri.EscapeDataString(XQuery)}&src=typed_query&f=live",
+            new ClueDialogPreset("X 线索", "@thsottiaux", 90, "明确预告：")),
+        new(
+            "X 全网实时讨论",
+            $"https://x.com/search?q={Uri.EscapeDataString("Codex (quota reset OR rate limit reset OR usage reset) OpenAI")}&src=typed_query&f=live",
+            new ClueDialogPreset("X 线索", string.Empty, 60)),
+        new(
+            "OpenAI 官方与状态信息",
+            $"https://www.google.com/search?q={Uri.EscapeDataString("site:openai.com OR site:status.openai.com Codex quota reset rate limit")}",
+            new ClueDialogPreset("OpenAI 官方", "@OpenAI", 90)),
+        new(
+            "GitHub 技术线索",
+            $"https://github.com/search?q={Uri.EscapeDataString("org:openai codex reset rate limit")}&type=issues&s=updated&o=desc",
+            new ClueDialogPreset("GitHub", "@OpenAI", 85)),
+        new(
+            "Reddit 社区讨论",
+            $"https://www.reddit.com/search/?q={Uri.EscapeDataString("Codex quota reset OpenAI")}&sort=new",
+            new ClueDialogPreset("Reddit 社区", string.Empty, 40)),
+        new(
+            "新闻与博客",
+            $"https://www.google.com/search?q={Uri.EscapeDataString("OpenAI Codex quota reset all users")}&tbm=nws",
+            new ClueDialogPreset("网页/新闻", string.Empty, 50))
+    ];
 
     private readonly UsageStore _usageStore;
     private readonly Label _status = new();
@@ -112,8 +141,9 @@ public sealed class RadarForm : Form
             WrapContents = false
         };
         buttons.Controls.Add(ActionButton("刷新", async (_, _) => await RefreshAsync()));
-        buttons.Controls.Add(ActionButton("添加全员重置线索", (_, _) => AddClue()));
-        buttons.Controls.Add(ActionButton("搜索 X", (_, _) => OpenXSearch()));
+        buttons.Controls.Add(ActionButton("快速粘贴添加", (_, _) => AddFromClipboard()));
+        var searchAndAdd = ActionButton("一键搜索并添加 ▾", (_, _) => ShowSearchMenu());
+        buttons.Controls.Add(searchAndAdd);
         buttons.Controls.Add(ActionButton("清空线索", (_, _) => ClearClues()));
         root.Controls.Add(buttons);
 
@@ -233,9 +263,9 @@ public sealed class RadarForm : Form
         }
     }
 
-    private void AddClue()
+    private void AddClue(ClueDialogPreset? preset = null, string? clipboardText = null)
     {
-        using var dialog = new ClueDialog();
+        using var dialog = new ClueDialog(preset, clipboardText);
         if (dialog.ShowDialog(this) != DialogResult.OK)
         {
             return;
@@ -243,6 +273,49 @@ public sealed class RadarForm : Form
 
         _usageStore.AddForecastSignal(dialog.Draft);
         UpdateView();
+    }
+
+    private void AddFromClipboard()
+    {
+        string? text = null;
+        try
+        {
+            text = Clipboard.ContainsText() ? Clipboard.GetText() : null;
+        }
+        catch (Exception error) when (error is ExternalException or ThreadStateException)
+        {
+            MessageBox.Show(this, error.Message, "读取剪贴板失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        AddClue(clipboardText: text);
+    }
+
+    private void ShowSearchMenu()
+    {
+        var menu = new ContextMenuStrip
+        {
+            Font = Font,
+            BackColor = Color.FromArgb(39, 35, 47),
+            ForeColor = ForeColor
+        };
+        foreach (var preset in SearchPresets)
+        {
+            var item = new ToolStripMenuItem(preset.Label);
+            item.Click += (_, _) => SearchAndAdd(preset);
+            menu.Items.Add(item);
+        }
+        menu.Items.Add(new ToolStripSeparator());
+        var manual = new ToolStripMenuItem("只添加信息，不打开搜索");
+        manual.Click += (_, _) => AddClue();
+        menu.Items.Add(manual);
+        menu.Closed += (_, _) => menu.Dispose();
+        menu.Show(Cursor.Position);
+    }
+
+    private void SearchAndAdd(SearchPreset preset)
+    {
+        OpenUrl(preset.Url);
+        AddClue(preset.DialogPreset);
     }
 
     private void ClearClues()
@@ -261,9 +334,8 @@ public sealed class RadarForm : Form
         UpdateView();
     }
 
-    private static void OpenXSearch()
+    private static void OpenUrl(string url)
     {
-        var url = $"https://x.com/search?q={Uri.EscapeDataString(XQuery)}&src=typed_query&f=live";
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 
@@ -276,4 +348,6 @@ public sealed class RadarForm : Form
         "community (history disagrees)" => "X 为主，历史冲突",
         _ => basis
     };
+
+    private sealed record SearchPreset(string Label, string Url, ClueDialogPreset DialogPreset);
 }
