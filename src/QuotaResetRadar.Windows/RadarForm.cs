@@ -12,16 +12,16 @@ public sealed class RadarForm : Form
     private static readonly SearchPreset[] SearchPresets =
     [
         new(
-            "内部人士与官方 X",
-            $"https://x.com/search?q={Uri.EscapeDataString(XQuery)}&src=typed_query&f=live",
+            "内部人士与官方 X（免登录搜索）",
+            WebSearchUrl($"site:x.com {XQuery}"),
             new ClueDialogPreset("X 线索", "@thsottiaux", 90, "明确预告：")),
         new(
-            "X 全网实时讨论",
-            $"https://x.com/search?q={Uri.EscapeDataString("Codex (quota reset OR rate limit reset OR usage reset) OpenAI")}&src=typed_query&f=live",
+            "X 全网讨论（免登录搜索）",
+            WebSearchUrl("site:x.com Codex quota reset OR rate limit reset OR usage reset OpenAI"),
             new ClueDialogPreset("X 线索", string.Empty, 60)),
         new(
             "OpenAI 官方与状态信息",
-            $"https://www.google.com/search?q={Uri.EscapeDataString("site:openai.com OR site:status.openai.com Codex quota reset rate limit")}",
+            WebSearchUrl("site:openai.com OR site:status.openai.com Codex quota reset rate limit"),
             new ClueDialogPreset("OpenAI 官方", "@OpenAI", 90)),
         new(
             "GitHub 技术线索",
@@ -29,11 +29,11 @@ public sealed class RadarForm : Form
             new ClueDialogPreset("GitHub", "@OpenAI", 85)),
         new(
             "Reddit 社区讨论",
-            $"https://www.reddit.com/search/?q={Uri.EscapeDataString("Codex quota reset OpenAI")}&sort=new",
+            WebSearchUrl("site:reddit.com Codex quota reset OpenAI"),
             new ClueDialogPreset("Reddit 社区", string.Empty, 40)),
         new(
             "新闻与博客",
-            $"https://www.google.com/search?q={Uri.EscapeDataString("OpenAI Codex quota reset all users")}&tbm=nws",
+            WebSearchUrl("OpenAI Codex quota reset all users"),
             new ClueDialogPreset("网页/新闻", string.Empty, 50))
     ];
 
@@ -44,6 +44,7 @@ public sealed class RadarForm : Form
     private readonly Label _official = new();
     private readonly Label _evidence = new();
     private readonly ListBox _clues = new();
+    private readonly ContextMenuStrip _searchMenu = new();
     private readonly System.Windows.Forms.Timer _clock = new() { Interval = 30_000 };
 
     public RadarForm(UsageStore usageStore)
@@ -57,6 +58,7 @@ public sealed class RadarForm : Form
         ForeColor = Color.FromArgb(239, 235, 248);
         Font = new Font("Microsoft YaHei UI", 10f);
 
+        ConfigureSearchMenu();
         Controls.Add(BuildLayout());
         _usageStore.Changed += OnUsageChanged;
         _clock.Tick += (_, _) => UpdateView();
@@ -69,6 +71,7 @@ public sealed class RadarForm : Form
         FormClosed += (_, _) =>
         {
             _clock.Stop();
+            _searchMenu.Dispose();
             _usageStore.Changed -= OnUsageChanged;
         };
     }
@@ -142,7 +145,8 @@ public sealed class RadarForm : Form
         };
         buttons.Controls.Add(ActionButton("刷新", async (_, _) => await RefreshAsync()));
         buttons.Controls.Add(ActionButton("快速粘贴添加", (_, _) => AddFromClipboard()));
-        var searchAndAdd = ActionButton("一键搜索并添加 ▾", (_, _) => ShowSearchMenu());
+        var searchAndAdd = ActionButton("一键搜索并添加 ▾");
+        searchAndAdd.Click += (_, _) => ShowSearchMenu(searchAndAdd);
         buttons.Controls.Add(searchAndAdd);
         buttons.Controls.Add(ActionButton("清空线索", (_, _) => ClearClues()));
         root.Controls.Add(buttons);
@@ -168,7 +172,7 @@ public sealed class RadarForm : Form
         return panel;
     }
 
-    private static Button ActionButton(string text, EventHandler onClick)
+    private static Button ActionButton(string text, EventHandler? onClick = null)
     {
         var button = new Button
         {
@@ -181,7 +185,10 @@ public sealed class RadarForm : Form
             Padding = new Padding(8, 4, 8, 4)
         };
         button.FlatAppearance.BorderColor = Color.FromArgb(118, 91, 153);
-        button.Click += onClick;
+        if (onClick is not null)
+        {
+            button.Click += onClick;
+        }
         return button;
     }
 
@@ -228,7 +235,7 @@ public sealed class RadarForm : Form
 
         if (_clues.Items.Count == 0)
         {
-            _clues.Items.Add("暂无线索。点击“搜索 X”，把明确提到全员重置日期的帖子加入雷达。");
+            _clues.Items.Add("暂无线索。点击“一键搜索并添加”，把明确提到全员重置日期的信息加入雷达。");
         }
         _clues.EndUpdate();
     }
@@ -290,31 +297,46 @@ public sealed class RadarForm : Form
         AddClue(clipboardText: text);
     }
 
-    private void ShowSearchMenu()
+    private void ConfigureSearchMenu()
     {
-        var menu = new ContextMenuStrip
-        {
-            Font = Font,
-            BackColor = Color.FromArgb(39, 35, 47),
-            ForeColor = ForeColor
-        };
+        _searchMenu.Font = Font;
+        _searchMenu.BackColor = Color.FromArgb(39, 35, 47);
+        _searchMenu.ForeColor = ForeColor;
         foreach (var preset in SearchPresets)
         {
             var item = new ToolStripMenuItem(preset.Label);
-            item.Click += (_, _) => SearchAndAdd(preset);
-            menu.Items.Add(item);
+            item.Click += (_, _) => BeginInvoke(() => SearchAndAdd(preset));
+            _searchMenu.Items.Add(item);
         }
-        menu.Items.Add(new ToolStripSeparator());
+        _searchMenu.Items.Add(new ToolStripSeparator());
         var manual = new ToolStripMenuItem("只添加信息，不打开搜索");
-        manual.Click += (_, _) => AddClue();
-        menu.Items.Add(manual);
-        menu.Closed += (_, _) => menu.Dispose();
-        menu.Show(Cursor.Position);
+        manual.Click += (_, _) => BeginInvoke(() => AddClue());
+        _searchMenu.Items.Add(manual);
+    }
+
+    private void ShowSearchMenu(Control anchor)
+    {
+        if (!_searchMenu.Visible)
+        {
+            _searchMenu.Show(anchor, new Point(0, anchor.Height));
+        }
     }
 
     private void SearchAndAdd(SearchPreset preset)
     {
-        OpenUrl(preset.Url);
+        try
+        {
+            OpenUrl(preset.Url);
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            MessageBox.Show(
+                this,
+                $"无法打开搜索页面，但仍可手工添加信息。\n\n{error.Message}",
+                "打开搜索失败",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
         AddClue(preset.DialogPreset);
     }
 
@@ -338,6 +360,9 @@ public sealed class RadarForm : Form
     {
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
+
+    private static string WebSearchUrl(string query) =>
+        $"https://www.bing.com/search?q={Uri.EscapeDataString(query)}";
 
     private static string Basis(string basis) => basis switch
     {
