@@ -11,6 +11,7 @@ public sealed class UsageStore : IDisposable
     private readonly SettingsStore _settings;
     private readonly ProviderDescriptor _codexDescriptor;
     private readonly QuotaForecastStore _forecastStore;
+    private readonly QuotaAutoSignalCollector _autoSignalCollector;
     private readonly object _sessionIndexWatcherLock = new();
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private PeriodicTimer? _timer;
@@ -21,11 +22,13 @@ public sealed class UsageStore : IDisposable
     public UsageStore(
         SettingsStore settings,
         ProviderDescriptor? codexDescriptor = null,
-        QuotaForecastStore? forecastStore = null)
+        QuotaForecastStore? forecastStore = null,
+        QuotaAutoSignalCollector? autoSignalCollector = null)
     {
         _settings = settings;
         _codexDescriptor = codexDescriptor ?? CodexProviderDescriptor.Create();
         _forecastStore = forecastStore ?? new QuotaForecastStore();
+        _autoSignalCollector = autoSignalCollector ?? new QuotaAutoSignalCollector();
         Forecast = _forecastStore.ObserveAndForecast(null, DateTimeOffset.Now);
     }
 
@@ -34,6 +37,7 @@ public sealed class UsageStore : IDisposable
     public string? LastError { get; private set; }
     public string? LastSourceLabel { get; private set; }
     public bool IsRefreshing { get; private set; }
+    public string AutoSearchStatus { get; private set; } = "尚未自动检查公开信息";
     public QuotaForecastSnapshot Forecast { get; private set; }
 
     public event EventHandler? Changed;
@@ -60,6 +64,7 @@ public sealed class UsageStore : IDisposable
             Credits = null;
             LastError = null;
             LastSourceLabel = null;
+            await RefreshAutomaticSignalsAsync(cancellationToken).ConfigureAwait(false);
             OnChanged();
             return;
         }
@@ -80,6 +85,7 @@ public sealed class UsageStore : IDisposable
             if (outcome.Result is null)
             {
                 LastError = outcome.ErrorDescription;
+                await RefreshAutomaticSignalsAsync(cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -88,6 +94,7 @@ public sealed class UsageStore : IDisposable
             Forecast = _forecastStore.ObserveAndForecast(Snapshot, DateTimeOffset.Now);
             LastSourceLabel = outcome.Result.SourceLabel;
             LastError = null;
+            await RefreshAutomaticSignalsAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -96,11 +103,32 @@ public sealed class UsageStore : IDisposable
         catch (Exception error)
         {
             LastError = error.Message;
+            await RefreshAutomaticSignalsAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             IsRefreshing = false;
             OnChanged();
+        }
+    }
+
+    private async Task RefreshAutomaticSignalsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var collection = await _autoSignalCollector
+                .CollectAsync(DateTimeOffset.Now, cancellationToken)
+                .ConfigureAwait(false);
+            Forecast = _forecastStore.AddSignals(collection.Signals, Snapshot, DateTimeOffset.Now);
+            AutoSearchStatus = collection.StatusLabel;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            AutoSearchStatus = $"自动信息检查失败：{error.Message}";
         }
     }
 

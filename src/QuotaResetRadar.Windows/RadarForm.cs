@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using WindexBar.Core.Forecasting;
 using WindexBar.Core.Refresh;
@@ -7,36 +6,6 @@ namespace QuotaResetRadar.Windows;
 
 public sealed class RadarForm : Form
 {
-    private const string XQuery = "(from:thsottiaux OR from:sama OR from:OpenAIDevs OR from:OpenAI) Codex (reset OR \"rate limit\" OR \"usage limit\" OR \"all plans\")";
-
-    private static readonly SearchPreset[] SearchPresets =
-    [
-        new(
-            "内部人士与官方 X（免登录搜索）",
-            WebSearchUrl($"site:x.com {XQuery}"),
-            new ClueDialogPreset("X 线索", "@thsottiaux", 90, "明确预告：")),
-        new(
-            "X 全网讨论（免登录搜索）",
-            WebSearchUrl("site:x.com Codex quota reset OR rate limit reset OR usage reset OpenAI"),
-            new ClueDialogPreset("X 线索", string.Empty, 60)),
-        new(
-            "OpenAI 官方与状态信息",
-            WebSearchUrl("site:openai.com OR site:status.openai.com Codex quota reset rate limit"),
-            new ClueDialogPreset("OpenAI 官方", "@OpenAI", 90)),
-        new(
-            "GitHub 技术线索",
-            $"https://github.com/search?q={Uri.EscapeDataString("org:openai codex reset rate limit")}&type=issues&s=updated&o=desc",
-            new ClueDialogPreset("GitHub", "@OpenAI", 85)),
-        new(
-            "Reddit 社区讨论",
-            WebSearchUrl("site:reddit.com Codex quota reset OpenAI"),
-            new ClueDialogPreset("Reddit 社区", string.Empty, 40)),
-        new(
-            "新闻与博客",
-            WebSearchUrl("OpenAI Codex quota reset all users"),
-            new ClueDialogPreset("网页/新闻", string.Empty, 50))
-    ];
-
     private readonly UsageStore _usageStore;
     private readonly Label _status = new();
     private readonly Label _forecast = new();
@@ -44,7 +13,7 @@ public sealed class RadarForm : Form
     private readonly Label _official = new();
     private readonly Label _evidence = new();
     private readonly ListBox _clues = new();
-    private readonly ContextMenuStrip _searchMenu = new();
+    private readonly ContextMenuStrip _advancedMenu = new();
     private readonly System.Windows.Forms.Timer _clock = new() { Interval = 30_000 };
 
     public RadarForm(UsageStore usageStore)
@@ -58,7 +27,7 @@ public sealed class RadarForm : Form
         ForeColor = Color.FromArgb(239, 235, 248);
         Font = new Font("Microsoft YaHei UI", 10f);
 
-        ConfigureSearchMenu();
+        ConfigureAdvancedMenu();
         Controls.Add(BuildLayout());
         _usageStore.Changed += OnUsageChanged;
         _clock.Tick += (_, _) => UpdateView();
@@ -71,7 +40,7 @@ public sealed class RadarForm : Form
         FormClosed += (_, _) =>
         {
             _clock.Stop();
-            _searchMenu.Dispose();
+            _advancedMenu.Dispose();
             _usageStore.Changed -= OnUsageChanged;
         };
     }
@@ -115,7 +84,7 @@ public sealed class RadarForm : Form
 
         var clueGroup = new GroupBox
         {
-            Text = "X 线索与历史验证",
+            Text = "自动信息与历史验证",
             Dock = DockStyle.Fill,
             ForeColor = ForeColor,
             Padding = new Padding(12),
@@ -143,12 +112,13 @@ public sealed class RadarForm : Form
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false
         };
-        buttons.Controls.Add(ActionButton("刷新", async (_, _) => await RefreshAsync()));
-        buttons.Controls.Add(ActionButton("快速粘贴添加", (_, _) => AddFromClipboard()));
-        var searchAndAdd = ActionButton("一键搜索并添加 ▾");
-        searchAndAdd.Click += (_, _) => ShowSearchMenu(searchAndAdd);
-        buttons.Controls.Add(searchAndAdd);
-        buttons.Controls.Add(ActionButton("清空线索", (_, _) => ClearClues()));
+        var refresh = ActionButton("刷新全部信息", async (_, _) => await RefreshAsync());
+        refresh.BackColor = Color.FromArgb(79, 61, 112);
+        refresh.Font = new Font(Font, FontStyle.Bold);
+        buttons.Controls.Add(refresh);
+        var advanced = ActionButton("更多 ▾");
+        advanced.Click += (_, _) => ShowAdvancedMenu(advanced);
+        buttons.Controls.Add(advanced);
         root.Controls.Add(buttons);
 
         return root;
@@ -203,11 +173,12 @@ public sealed class RadarForm : Form
     private void UpdateView()
     {
         var snapshot = _usageStore.Forecast;
-        _status.Text = _usageStore.IsRefreshing
+        var usageStatus = _usageStore.IsRefreshing
             ? "正在读取 Codex 用量……"
             : string.IsNullOrWhiteSpace(_usageStore.LastError)
                 ? $"本地时间 {DateTimeOffset.Now:yyyy-MM-dd HH:mm} · 数据仅保存在本机"
                 : $"Codex 读取暂不可用：{_usageStore.LastError}";
+        _status.Text = $"{usageStatus} · {_usageStore.AutoSearchStatus}";
 
         _forecast.Text = snapshot.ExtraReset is null
             ? "全员额度重置预测\n证据不足，暂不报日期"
@@ -218,7 +189,7 @@ public sealed class RadarForm : Form
             ? "个人周期参考：等待 Codex 返回精确重置时间（不参与全员概率）"
             : $"个人周期参考：{snapshot.OfficialReset.ResetsAt.ToLocalTime():MM-dd HH:mm} · 剩余 {snapshot.OfficialReset.RemainingPercent:0.#}%（不参与全员概率）";
 
-        _evidence.Text = $"X 线索 {snapshot.Signals.Count} · 命中 {snapshot.ConfirmedSignalCount} · 待验证 {snapshot.PendingSignalCount} · 历史全员重置 {snapshot.Observations.Count}";
+        _evidence.Text = $"自动信息 {snapshot.Signals.Count} · 命中 {snapshot.ConfirmedSignalCount} · 待验证 {snapshot.PendingSignalCount} · 历史全员重置 {snapshot.Observations.Count}";
         _clues.BeginUpdate();
         _clues.Items.Clear();
         foreach (var clue in snapshot.Signals)
@@ -235,7 +206,7 @@ public sealed class RadarForm : Form
 
         if (_clues.Items.Count == 0)
         {
-            _clues.Items.Add("暂无线索。点击“一键搜索并添加”，把明确提到全员重置日期的信息加入雷达。");
+            _clues.Items.Add("暂无线索。点击“刷新全部信息”，程序会自动检查公开来源。");
         }
         _clues.EndUpdate();
     }
@@ -297,54 +268,33 @@ public sealed class RadarForm : Form
         AddClue(clipboardText: text);
     }
 
-    private void ConfigureSearchMenu()
+    private void ConfigureAdvancedMenu()
     {
-        _searchMenu.Font = Font;
-        _searchMenu.BackColor = Color.FromArgb(39, 35, 47);
-        _searchMenu.ForeColor = ForeColor;
-        foreach (var preset in SearchPresets)
-        {
-            var item = new ToolStripMenuItem(preset.Label);
-            item.Click += (_, _) => BeginInvoke(() => SearchAndAdd(preset));
-            _searchMenu.Items.Add(item);
-        }
-        _searchMenu.Items.Add(new ToolStripSeparator());
-        var manual = new ToolStripMenuItem("只添加信息，不打开搜索");
-        manual.Click += (_, _) => BeginInvoke(() => AddClue());
-        _searchMenu.Items.Add(manual);
+        _advancedMenu.Font = Font;
+        _advancedMenu.BackColor = Color.FromArgb(39, 35, 47);
+        _advancedMenu.ForeColor = ForeColor;
+        var manual = new ToolStripMenuItem("手动导入信息（可选）");
+        manual.Click += (_, _) => BeginInvoke((Action)(() => AddFromClipboard()));
+        _advancedMenu.Items.Add(manual);
+        _advancedMenu.Items.Add(new ToolStripSeparator());
+        var clear = new ToolStripMenuItem("清空本地信息");
+        clear.Click += (_, _) => BeginInvoke((Action)(ClearClues));
+        _advancedMenu.Items.Add(clear);
     }
 
-    private void ShowSearchMenu(Control anchor)
+    private void ShowAdvancedMenu(Control anchor)
     {
-        if (!_searchMenu.Visible)
+        if (!_advancedMenu.Visible)
         {
-            _searchMenu.Show(anchor, new Point(0, anchor.Height));
+            _advancedMenu.Show(anchor, new Point(0, anchor.Height));
         }
-    }
-
-    private void SearchAndAdd(SearchPreset preset)
-    {
-        try
-        {
-            OpenUrl(preset.Url);
-        }
-        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-            MessageBox.Show(
-                this,
-                $"无法打开搜索页面，但仍可手工添加信息。\n\n{error.Message}",
-                "打开搜索失败",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-        }
-        AddClue(preset.DialogPreset);
     }
 
     private void ClearClues()
     {
         if (MessageBox.Show(
                 this,
-                "清空手工加入的 X 线索？已观察到的全员重置历史会保留。",
+                "清空本地自动与手工信息？已观察到的全员重置历史会保留。",
                 "确认清空",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question) != DialogResult.Yes)
@@ -356,14 +306,6 @@ public sealed class RadarForm : Form
         UpdateView();
     }
 
-    private static void OpenUrl(string url)
-    {
-        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-    }
-
-    private static string WebSearchUrl(string query) =>
-        $"https://www.bing.com/search?q={Uri.EscapeDataString(query)}";
-
     private static string Basis(string basis) => basis switch
     {
         "community" => "X 线索",
@@ -374,5 +316,4 @@ public sealed class RadarForm : Form
         _ => basis
     };
 
-    private sealed record SearchPreset(string Label, string Url, ClueDialogPreset DialogPreset);
 }

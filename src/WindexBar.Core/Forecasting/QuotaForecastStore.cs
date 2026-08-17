@@ -54,6 +54,58 @@ public sealed class QuotaForecastStore
         }
     }
 
+    public QuotaForecastSnapshot AddSignals(
+        IEnumerable<QuotaCommunitySignalDraft> drafts,
+        UsageSnapshot? usage,
+        DateTimeOffset now)
+    {
+        lock (_sync)
+        {
+            var knownUrls = _state.Signals
+                .Where(signal => !string.IsNullOrWhiteSpace(signal.SourceUrl))
+                .Select(signal => signal.SourceUrl)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var changed = false;
+            foreach (var draft in drafts)
+            {
+                var sourceUrl = draft.SourceUrl.Trim();
+                if (sourceUrl.Length == 0 || !knownUrls.Add(sourceUrl))
+                {
+                    continue;
+                }
+
+                _state.Signals.Add(new QuotaCommunitySignal(
+                    Guid.NewGuid(),
+                    sourceUrl,
+                    NormalizeAuthorDisplay(draft.Author),
+                    draft.Note.Trim(),
+                    now,
+                    draft.TargetAt,
+                    QuotaTrustedSources.SuggestedReliability(draft.Author, draft.Reliability),
+                    QuotaSignalStatus.Pending));
+                changed = true;
+            }
+
+            if (_state.Signals.Count > 200)
+            {
+                _state.Signals = _state.Signals
+                    .OrderByDescending(signal => signal.CapturedAt)
+                    .Take(200)
+                    .ToList();
+                changed = true;
+            }
+
+            if (changed)
+            {
+                ObserveUsageWindows(usage, now);
+                ReconcileSignals(now);
+                Save();
+            }
+
+            return QuotaForecastEngine.Build(usage, _state, now);
+        }
+    }
+
     public QuotaForecastSnapshot ClearSignals(UsageSnapshot? usage, DateTimeOffset now)
     {
         lock (_sync)
