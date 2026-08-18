@@ -148,6 +148,14 @@ public sealed class UsageStore : IDisposable
         OnChanged();
     }
 
+    public async Task StartForecastAsync(CancellationToken cancellationToken = default)
+    {
+        ForecastStatus = "正在预测：刷新当前信息并计算概率……";
+        OnChanged();
+        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        StartForecast();
+    }
+
     public void ClearForecastSignals()
     {
         Forecast = _forecastStore.ClearSignals(Snapshot, DateTimeOffset.Now);

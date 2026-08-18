@@ -115,7 +115,7 @@ public sealed class RadarForm : Form
         var refresh = ActionButton("刷新全部信息", async (_, _) => await RefreshAsync());
         refresh.BackColor = Color.FromArgb(79, 61, 112);
         buttons.Controls.Add(refresh);
-        var predict = ActionButton("开始预测", (_, _) => StartForecast());
+        var predict = ActionButton("开始预测", async (_, _) => await StartForecastAsync());
         predict.BackColor = Color.FromArgb(70, 112, 92);
         predict.Font = new Font(Font, FontStyle.Bold);
         buttons.Controls.Add(predict);
@@ -181,7 +181,7 @@ public sealed class RadarForm : Form
             : string.IsNullOrWhiteSpace(_usageStore.LastError)
                 ? $"本地时间 {DateTimeOffset.Now:yyyy-MM-dd HH:mm} · 数据仅保存在本机"
                 : $"Codex 读取暂不可用：{_usageStore.LastError}";
-        _status.Text = $"{usageStatus} · {_usageStore.AutoSearchStatus}";
+        _status.Text = $"{usageStatus} · {_usageStore.ForecastStatus} · {_usageStore.AutoSearchStatus}";
 
         _forecast.Text = snapshot.ExtraReset is null
             ? "全员额度重置预测\n证据不足，暂不报日期"
@@ -244,11 +244,11 @@ public sealed class RadarForm : Form
         }
     }
 
-    private void StartForecast()
+    private async Task StartForecastAsync()
     {
         try
         {
-            _usageStore.StartForecast();
+            await _usageStore.StartForecastAsync();
             UpdateView();
         }
         catch (Exception error)
