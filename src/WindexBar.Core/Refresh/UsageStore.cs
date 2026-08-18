@@ -38,6 +38,7 @@ public sealed class UsageStore : IDisposable
     public string? LastSourceLabel { get; private set; }
     public bool IsRefreshing { get; private set; }
     public string AutoSearchStatus { get; private set; } = "尚未自动检查公开信息";
+    public string ForecastStatus { get; private set; } = "等待开始预测";
     public QuotaForecastSnapshot Forecast { get; private set; }
 
     public event EventHandler? Changed;
@@ -121,6 +122,7 @@ public sealed class UsageStore : IDisposable
                 .ConfigureAwait(false);
             Forecast = _forecastStore.AddSignals(collection.Signals, Snapshot, DateTimeOffset.Now);
             AutoSearchStatus = collection.StatusLabel;
+            ForecastStatus = "信息已刷新，点击“开始预测”确认结果";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -135,12 +137,21 @@ public sealed class UsageStore : IDisposable
     public void AddForecastSignal(QuotaCommunitySignalDraft draft)
     {
         Forecast = _forecastStore.AddSignal(draft, Snapshot, DateTimeOffset.Now);
+        ForecastStatus = "信息已添加，点击“开始预测”更新结果";
+        OnChanged();
+    }
+
+    public void StartForecast()
+    {
+        Forecast = _forecastStore.ObserveAndForecast(Snapshot, DateTimeOffset.Now);
+        ForecastStatus = $"预测已完成 {DateTimeOffset.Now:HH:mm}";
         OnChanged();
     }
 
     public void ClearForecastSignals()
     {
         Forecast = _forecastStore.ClearSignals(Snapshot, DateTimeOffset.Now);
+        ForecastStatus = "信息已清空，点击“开始预测”";
         OnChanged();
     }
 

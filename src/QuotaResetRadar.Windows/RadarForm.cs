@@ -114,8 +114,11 @@ public sealed class RadarForm : Form
         };
         var refresh = ActionButton("刷新全部信息", async (_, _) => await RefreshAsync());
         refresh.BackColor = Color.FromArgb(79, 61, 112);
-        refresh.Font = new Font(Font, FontStyle.Bold);
         buttons.Controls.Add(refresh);
+        var predict = ActionButton("开始预测", (_, _) => StartForecast());
+        predict.BackColor = Color.FromArgb(70, 112, 92);
+        predict.Font = new Font(Font, FontStyle.Bold);
+        buttons.Controls.Add(predict);
         var advanced = ActionButton("更多 ▾");
         advanced.Click += (_, _) => ShowAdvancedMenu(advanced);
         buttons.Controls.Add(advanced);
@@ -189,7 +192,7 @@ public sealed class RadarForm : Form
             ? "个人周期参考：等待 Codex 返回精确重置时间（不参与全员概率）"
             : $"个人周期参考：{snapshot.OfficialReset.ResetsAt.ToLocalTime():MM-dd HH:mm} · 剩余 {snapshot.OfficialReset.RemainingPercent:0.#}%（不参与全员概率）";
 
-        _evidence.Text = $"自动信息 {snapshot.Signals.Count} · 命中 {snapshot.ConfirmedSignalCount} · 待验证 {snapshot.PendingSignalCount} · 历史全员重置 {snapshot.Observations.Count}";
+        _evidence.Text = $"自动信息 {snapshot.Signals.Count} · 命中 {snapshot.ConfirmedSignalCount} · 待验证 {snapshot.PendingSignalCount} · 历史全员重置 {snapshot.Observations.Count} · {_usageStore.ForecastStatus}";
         _clues.BeginUpdate();
         _clues.Items.Clear();
         foreach (var clue in snapshot.Signals)
@@ -238,6 +241,19 @@ public sealed class RadarForm : Form
         catch (Exception error)
         {
             MessageBox.Show(this, error.Message, "刷新失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void StartForecast()
+    {
+        try
+        {
+            _usageStore.StartForecast();
+            UpdateView();
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show(this, error.Message, "预测失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
